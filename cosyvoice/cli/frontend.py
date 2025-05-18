@@ -149,9 +149,16 @@ class CosyVoiceFrontEnd:
         return texts if split is True else text
 
     def frontend_sft(self, tts_text, spk_id):
+        logging.info(f'选择的{spk_id=}')
         tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
-        embedding = self.spk2info[spk_id]['embedding']
-        model_input = {'text': tts_text_token, 'text_len': tts_text_token_len, 'llm_embedding': embedding, 'flow_embedding': embedding}
+        data = self.get_speaker_info(spk_id)
+        if 'embedding' in data:
+            embedding = data['embedding']
+            model_input = {'llm_embedding': embedding, 'flow_embedding': embedding}
+        else:
+            model_input = data
+        model_input['text'] = tts_text_token
+        model_input['text_len'] = tts_text_token_len
         return model_input
 
     def frontend_zero_shot(self, tts_text, prompt_text, prompt_speech_16k, resample_rate, zero_shot_spk_id):
@@ -213,3 +220,14 @@ class CosyVoiceFrontEnd:
                        'prompt_speech_feat': prompt_speech_feat, 'prompt_speech_feat_len': prompt_speech_feat_len,
                        'flow_embedding': embedding}
         return model_input
+
+
+    def get_speaker_info(self, spk_id:str) -> dict:
+        if spk_id not in self.spk2info:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            root_dir = os.path.join(current_dir, '../..')
+            pt = os.path.join(root_dir, 'speakers', f'{spk_id}.pt')
+            assert os.path.exists(pt), f"{spk_id=} {pt}文件不存在"
+            _dict = torch.load(pt, map_location=self.device)
+            self.spk2info.update(_dict)
+        return self.spk2info[spk_id]

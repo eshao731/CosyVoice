@@ -178,8 +178,20 @@ class CosyVoice2(CosyVoice):
                                 self.fp16)
         del configs
 
-    def inference_instruct(self, *args, **kwargs):
-        raise NotImplementedError('inference_instruct is not implemented for CosyVoice2!')
+    def inference_instruct(self, tts_text, spk_id, instruct_text, stream=False, speed=1.0, text_frontend=True):
+        assert isinstance(self.model, CosyVoice2Model), 'inference_instruct2 is only implemented for CosyVoice2!'
+        for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
+            model_input = self.frontend.get_speaker_info(spk_id)
+            del model_input['llm_prompt_speech_token']
+            del model_input['llm_prompt_speech_token_len']
+            start_time = time.time()
+            logging.info('synthesis text {}'.format(i))
+            for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
+                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                yield model_output
+                start_time = time.time()
+        
 
     def inference_instruct2(self, tts_text, instruct_text, prompt_speech_16k, zero_shot_spk_id='', stream=False, speed=1.0, text_frontend=True):
         assert isinstance(self.model, CosyVoice2Model), 'inference_instruct2 is only implemented for CosyVoice2!'
@@ -192,3 +204,13 @@ class CosyVoice2(CosyVoice):
                 logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
+
+    def save_zero_shot_spk(self, prompt_text, prompt_speech_16k, zero_shot_spk_id):
+        assert zero_shot_spk_id != '', 'do not use empty zero_shot_spk_id'
+        model_input = self.frontend.frontend_zero_shot('', prompt_text, prompt_speech_16k, self.sample_rate, '')
+        del model_input['text']
+        del model_input['text_len']
+        result = {
+            zero_shot_spk_id: model_input
+        }
+        torch.save(result, '{}/{}.pt'.format(self.model_dir, zero_shot_spk_id))
